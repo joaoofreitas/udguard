@@ -3,6 +3,7 @@ package main
 import (
     "os"
     "log"
+    "net"
     "github.com/joaoofreitas/udguard/internal"
 )
 
@@ -14,55 +15,52 @@ func main() {
 	logger.Fatal(err)
 	panic(err)
     }
-    
-    c_conn, err := internal.StartClient("0.0.0.0", "8081")
+    defer s_conn.Close()
+
+    for {
+	var buf [512]byte
+	n, addr, err := s_conn.ReadFromUDP(buf[:])
+	if err != nil {
+	    logger.Fatal(err)
+	    panic(err)
+	}
+	go DNSLookup(buf[0:n], addr, s_conn)
+    }
+}
+
+func DNSLookup(msg []byte, addr *net.UDPAddr, s_conn *net.UDPConn) {
+    var dns_resp chan []byte = make(chan []byte)
+
+    c_conn, err := internal.StartClient("1.1.1.1", "53")
     if err != nil {
 	logger.Fatal(err)
 	panic(err)
     }
+    defer c_conn.Close()
+
+    log.Println("Sending request to DNS server")
+    _, err = c_conn.Write(msg)
+
+    go func() {
+	for {
+    	    var buf [512]byte
+    	    _, _, err := c_conn.ReadFromUDP(buf[0:])
+    	    if err != nil {
+    	        logger.Fatal(err)
+    	        panic(err)
+    	    }
+	    log.Println("Received response from DNS server")
+	    log.Println(buf)
+	    dns_resp <- buf[0:]
+    	}
+    }()
     
-    c_to_s:= make(chan []byte)
-    s_to_c := make(chan []byte)
-    go func(c_to_s chan []byte) {
-	var buf [1024]byte
-	for {
-	    n, err := s_conn.Read(buf[:])
-	    if err != nil {
-		logger.Fatal(err)
-		panic(err)
-	    }
-	    c_to_s <- buf[:n]
-	}
-    }(c_to_s)
+    log.Println("Waiting for response from DNS server")
+    resp := <- dns_resp
 
-    go func(s_to_c chan []byte) {
-	var buf [1024]byte
-	for {
-	    n, err := c_conn.Read(buf[:])
-	    if err != nil {
-		logger.Fatal(err)
-		panic(err)
-	    }
-	    s_to_c <- buf[:n]
-	}
-    }(s_to_c)
-
-    for {
-	select {
-	case msg := <- c_to_s:
-	    _, err := s_conn.WriteTo(msg, c_conn.RemoteAddr()) 
-
-	    if err != nil {
-		logger.Fatal(err)
-	    }
-	    logger.Println("Sent: ", string(msg))
-	case msg := <- s_to_c:
-	    _, err := c_conn.WriteTo(msg, c_conn.RemoteAddr()) 
-
-	    if err != nil {
-		logger.Fatal(err)
-	    }
-	    logger.Println("Received: ", string(msg))
-	}
+    log.Println("Sending response to client")
+    _, err = s_conn.WriteToUDP(resp, addr)
+    if err != nil {
+	logger.Fatal(err)
     }
 }
