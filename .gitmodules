@@ -1,0 +1,3 @@
+[submodule "public-domain-lists"]
+	path = public-domain-lists
+	url = https://github.com/opendns/public-domain-lists.git
