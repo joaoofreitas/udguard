@@ -24,13 +24,11 @@ func main() {
 	    logger.Fatal(err)
 	    panic(err)
 	}
-	go DNSLookup(buf[0:n], addr, s_conn)
+	go DNSLookupHandler(buf[0:n], addr, s_conn)
     }
 }
 
-func DNSLookup(msg []byte, addr *net.UDPAddr, s_conn *net.UDPConn) {
-    var dns_resp chan []byte = make(chan []byte)
-
+func DNSLookupHandler(msg []byte, addr *net.UDPAddr, s_conn *net.UDPConn) {
     c_conn, err := internal.StartClient("1.1.1.1", "53")
     if err != nil {
 	logger.Fatal(err)
@@ -41,25 +39,18 @@ func DNSLookup(msg []byte, addr *net.UDPAddr, s_conn *net.UDPConn) {
     log.Println("Sending request to DNS server")
     _, err = c_conn.Write(msg)
 
-    go func() {
-	for {
-    	    var buf [512]byte
-    	    _, _, err := c_conn.ReadFromUDP(buf[0:])
-    	    if err != nil {
-    	        logger.Fatal(err)
-    	        panic(err)
-    	    }
-	    log.Println("Received response from DNS server")
-	    log.Println(buf)
-	    dns_resp <- buf[0:]
-    	}
-    }()
+    var buf [512]byte
+    _, _, err = c_conn.ReadFromUDP(buf[0:])
+    if err != nil {
+	logger.Fatal(err)
+    }
+    log.Println("Received response from DNS server")
+    log.Println(buf)
     
     log.Println("Waiting for response from DNS server")
-    resp := <- dns_resp
 
     log.Println("Sending response to client")
-    _, err = s_conn.WriteToUDP(resp, addr)
+    _, err = s_conn.WriteToUDP(buf[:], addr)
     if err != nil {
 	logger.Fatal(err)
     }
